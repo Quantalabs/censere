@@ -46,6 +46,12 @@
               clippy
               rust-analyzer
             ] ++ buildInputs ++ nativeBuildInputs;
+
+            shellHook = ''
+              set -a
+              source .env
+              set +a
+            '';
         };
       }
     );
