@@ -18,108 +18,119 @@ fn find_gen(age: usize, year: usize) -> usize {
 pub fn filter_puma(metro: &str, lang: &str) {
     let (all, header) =
         read::read_single(format!("data/{}/{}.csv", metro, lang), (0..11).collect()).unwrap();
-    let mut pumas: HashMap<String, Vec<&Vec<String>>> = HashMap::new();
+    let mut pumas: HashMap<String, HashMap<usize, Vec<&Vec<String>>>> = HashMap::new();
 
     all.iter().for_each(|record| {
         pumas
             .entry(record[1].clone())
-            .and_modify(|x| x.push(record))
-            .or_insert(vec![&record]);
+            .and_modify(|x| {
+                x.entry(record[0].parse::<usize>().unwrap())
+                    .and_modify(|y| y.push(record))
+                    .or_insert(vec![record]);
+            })
+            .or_insert({
+                let x = HashMap::new();
+                x.insert(record[0].parse::<usize>().unwrap(), vec![record]);
+                x
+            });
     });
 
     let mut ags_loc: Vec<Agg> = vec![];
     let mut ags_gen: HashMap<String, Vec<Agg>> = HashMap::new();
 
-    pumas.iter().for_each(|(loc, records)| {
-        let mut generations: HashMap<String, Vec<&Vec<String>>> = HashMap::new();
-        let mut aggs: Vec<Agg> = vec![];
+    pumas.iter().for_each(|(loc, years)| {
+        years.iter().for_each(|(year, records)| {
+            let mut generations: HashMap<String, Vec<&Vec<String>>> = HashMap::new();
+            let mut aggs: Vec<Agg> = vec![];
 
-        records.iter().for_each(|record| {
-            generations
-                .entry(
-                    find_gen(
-                        record[3].parse::<usize>().unwrap(),
-                        record[0].parse::<usize>().unwrap(),
+            records.iter().for_each(|record| {
+                generations
+                    .entry(
+                        find_gen(
+                            record[3].parse::<usize>().unwrap(),
+                            record[0].parse::<usize>().unwrap(),
+                        )
+                        .to_string(),
                     )
-                    .to_string(),
+                    .and_modify(|x| x.push(record))
+                    .or_insert(vec![record]);
+            });
+
+            generations.iter().for_each(|(generation, recs)| {
+                let _ = fs::create_dir(format!("data/{}/{}", metro, loc));
+                let _ = read::export(
+                    format!("data/{}/{}/{}_{}_gen{}.csv", metro, loc, year, lang, generation),
+                    recs.clone(),
+                    &header,
+                );
+
+                let agg = recs.iter().fold(
+                    Agg {
+                        pop: 0,
+                        lang: 0,
+                        mig: HashMap::new(),
+                    },
+                    |acc, &x| Agg {
+                        pop: acc.pop + 1,
+                        lang: if ![String::from("00"), String::from("01")].contains(&x[10]) {
+                            acc.lang + 1
+                        } else {
+                            acc.lang
+                        },
+                        mig: if "0000" != &x[9] {
+                            let mut new = acc.mig.clone();
+                            new.entry(x[9].clone()).and_modify(|y| *y += 1).or_insert(1);
+                            new
+                        } else {
+                            acc.mig
+                        },
+                    },
+                );
+
+                let serialized = serde_json::to_string(&agg).unwrap();
+
+                fs::create_dir(format!("data/{}/{}/{}", metro, loc, year));
+                fs::write(
+                    format!("data/{}/{}/{}/{}_gen{}.json", metro, loc, year, lang, generation),
+                    serialized,
                 )
-                .and_modify(|x| x.push(record))
-                .or_insert(vec![record]);
-        });
+                .unwrap();
 
-        generations.iter().for_each(|(generation, recs)| {
-            let _ = fs::create_dir(format!("data/{}/{}", metro, loc));
-            let _ = read::export(
-                format!("data/{}/{}/{}_gen{}.csv", metro, loc, lang, generation),
-                recs.clone(),
-                &header,
-            );
+                ags_gen
+                    .entry(generation.clone())
+                    .and_modify(|x| x.push(agg.clone()))
+                    .or_insert(vec![agg.clone()]);
 
-            let agg = recs.iter().fold(
+                aggs.push(agg.clone());
+            });
+
+            let agg = aggs.iter().fold(
                 Agg {
                     pop: 0,
                     lang: 0,
                     mig: HashMap::new(),
                 },
-                |acc, &x| Agg {
-                    pop: acc.pop + 1,
-                    lang: if ![String::from("00"), String::from("01")].contains(&x[10]) {
-                        acc.lang + 1
-                    } else {
-                        acc.lang
-                    },
-                    mig: if "0000" != &x[9] {
-                        let mut new = acc.mig.clone();
-                        new.entry(x[9].clone()).and_modify(|y| *y += 1).or_insert(1);
+                |acc, g| Agg {
+                    pop: acc.pop + g.pop,
+                    lang: acc.lang + g.lang,
+                    mig: acc.mig.into_iter().fold(g.mig.clone(), |acc, (k, v)| {
+                        let mut new = acc.clone();
+                        new.entry(k).and_modify(|x| *x += v).or_insert(v);
                         new
-                    } else {
-                        acc.mig
-                    },
+                    }),
                 },
             );
 
             let serialized = serde_json::to_string(&agg).unwrap();
 
             fs::write(
-                format!("data/{}/{}/{}_gen{}.json", metro, loc, lang, generation),
+                format!("data/{}/{}/{}_all.json", metro, loc, lang),
                 serialized,
             )
             .unwrap();
 
-            ags_gen
-                .entry(generation.clone())
-                .and_modify(|x| x.push(agg.clone()))
-                .or_insert(vec![agg.clone()]);
-
-            aggs.push(agg.clone());
+            ags_loc.push(agg);
         });
-
-        let agg = aggs.iter().fold(
-            Agg {
-                pop: 0,
-                lang: 0,
-                mig: HashMap::new(),
-            },
-            |acc, g| Agg {
-                pop: acc.pop + g.pop,
-                lang: acc.lang + g.lang,
-                mig: acc.mig.into_iter().fold(g.mig.clone(), |acc, (k, v)| {
-                    let mut new = acc.clone();
-                    new.entry(k).and_modify(|x| *x += v).or_insert(v);
-                    new
-                }),
-            },
-        );
-
-        let serialized = serde_json::to_string(&agg).unwrap();
-
-        fs::write(
-            format!("data/{}/{}/{}_all.json", metro, loc, lang),
-            serialized,
-        )
-        .unwrap();
-
-        ags_loc.push(agg);
     });
 
     let ag_gen: HashMap<String, Agg> = ags_gen

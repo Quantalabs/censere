@@ -128,73 +128,18 @@ fn filter_puma() {
     TARGETS.iter().for_each(|metro| {
         languages.iter().for_each(|lang| {
             utils::filter_puma(metro.0, lang);
-        });
-
-        let mut proportions: HashMap<String, (f64, HashMap<String, f64>)> = HashMap::new();
-        let mut pops: HashMap<String, usize> = HashMap::new();
-        let raw = read::read_single(format!("./data/raw/{}.csv", metro.0), (0..12).collect())
-            .unwrap()
-            .0;
-
-        raw.iter().for_each(|record| {
-            let lang = if record[10] == "01" {
-                String::from("00")
-            } else {
-                record[10].clone()
-            };
-
-            proportions
-                .entry(lang)
-                .and_modify(|p| {
-                    p.0 += 1.0;
-                    p.1.insert(record[1].clone(), 1.0);
-                })
-                .or_insert((1.0, HashMap::from([(record[1].clone(), 1.0)])));
-
-            pops.entry(record[1].clone())
-                .and_modify(|p| *p += 1)
-                .or_insert(1);
-        });
-
-        proportions.clone().iter().for_each(|(lang, (p, m))| {
-            let mut new = m.clone();
-
-            m.iter().for_each(|(puma, pop)| {
-                new.entry(puma.clone())
-                    .and_modify(|e| *e = pop / (*pops.get(puma).unwrap() as f64));
-
-                proportions
-                    .entry(lang.clone())
-                    .and_modify(|e| *e = (p / (*metro.1 as f64), new.clone()));
-            });
-        });
-
-        let mut ldi: HashMap<String, f64> = HashMap::new();
-
-        proportions.iter().for_each(|(_, (p, m))| {
-            ldi.entry(String::from(metro.0))
-                .and_modify(|e| *e -= p.powf(2.0))
-                .or_insert(1.0 - p.powf(2.0));
-
-            m.iter().for_each(|(met, pro)| {
-                ldi.entry(String::from(met))
-                    .and_modify(|e| *e -= pro.powf(2.0))
-                    .or_insert(1.0 - pro.powf(2.0));
-            });
-        });
-
-        fs::write(
-            format!("./data/{}/ldi.json", metro.0),
-            serde_json::to_string(&ldi).unwrap(),
-        )
-        .unwrap();
+        });      
     });
 }
 
-fn correlation() {}
+fn correlation() {
+    let mut observations Vec<(usize, usize, f64, f64, usize, usize)> = vec![];
+
+    
+}
 
 fn main() {
-    let stages = [split, filter_languages, filter_puma, correlation];
+    let stages = [correlation];
 
     stages.iter().for_each(|x| x());
 }
