@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, f64, fs};
 
 mod read;
 mod utils;
@@ -128,14 +128,32 @@ fn filter_puma() {
     TARGETS.iter().for_each(|metro| {
         languages.iter().for_each(|lang| {
             utils::filter_puma(metro.0, lang);
-        });      
+        });
     });
 }
 
-fn correlation() {
-    let mut observations Vec<(usize, usize, f64, f64, usize, usize)> = vec![];
+struct ObservationLoc {
+    year: usize,
+    pop: usize,
+    speakers: usize,
+    migration: f64,
+    ldi: f64,
+    shift: f64,
+}
 
-    
+struct ObservationGen {
+    year: usize,
+    pop: usize,
+    speakers: usize,
+    migration: f64,
+    ldi: f64,
+    hor_shift: f64,
+    vert_shift: f64,
+}
+
+fn correlation() {
+    let mut gen_obs: Vec<ObservationGen> = Vec::new();
+    let mut gen_loc: Vec<ObservationLoc> = Vec::new();
 }
 
 fn main() {
