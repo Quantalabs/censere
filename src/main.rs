@@ -294,7 +294,7 @@ fn filter_puma() {
             let mut ret: HashMap<String, &read::Codes> = HashMap::new();
             metro.2.iter().for_each(|x| {
                 ret.entry(x.to_string())
-                    .insert_entry(filters.get(&x.to_string()).unwrap());
+                    .insert_entry(filters.get(*x).unwrap());
             });
             ret
         });
@@ -312,54 +312,22 @@ fn correlation() {
         paths.for_each(|puma| {
             let m = puma.unwrap();
             if (!m.file_type().unwrap().is_file()) {
-                 
                 let d = fs::read_dir(m.path()).unwrap();
 
                 d.for_each(|group| {
                     let g = group.unwrap();
-                    let year = g.path()
-                                    .file_name()
-                                    .unwrap()
-                                    .to_str()
-                                    .unwrap()
-                                    .split_at(4)
-                                    .0
-                                    .to_string();
-                    if g.path()
-                        .file_name()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .ends_with("gen_agg.json")
-                    {
-                        gen_obs
-                            .entry(
-                                year
-                            )
-                            .insert_entry(
-                                serde_json::from_str(
-                                    fs::read_to_string(g.path()).unwrap().as_str(),
-                                )
+                    let name = g.path().file_name().unwrap().to_str().unwrap().to_string();
+                    let year = name.split_at(4).0.to_string();
+                    if name.ends_with("gen_agg.json") {
+                        gen_obs.entry(year).insert_entry(
+                            serde_json::from_str(fs::read_to_string(g.path()).unwrap().as_str())
                                 .unwrap(),
-                            );
-                    } else if g
-                        .path()
-                        .file_name()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .ends_with("_agg.json")
-                    {
-                        loc_obs
-                            .entry(
-                                year
-                            )
-                            .insert_entry(
-                                serde_json::from_str(
-                                    fs::read_to_string(g.path()).unwrap().as_str(),
-                                )
+                        );
+                    } else if name.ends_with("_agg.json") {
+                        loc_obs.entry(year).insert_entry(
+                            serde_json::from_str(fs::read_to_string(g.path()).unwrap().as_str())
                                 .unwrap(),
-                            );
+                        );
                     }
                 })
             }
@@ -370,18 +338,18 @@ fn correlation() {
         loc_obs.iter().for_each(|(g, obs)| {
             let (year, _) = g.split_at(4);
             let prev_group = (year.parse::<usize>().unwrap() - 1).to_string();
-            if (loc_obs.get(&prev_group).is_some()) {
+            if (loc_obs.contains_key(&prev_group)) {
                 let prev_c = loc_obs.get(&prev_group).unwrap();
                 let d_ldi = prev_c.ldi - obs.ldi;
                 let d_pop = prev_c.pop as f64 - obs.pop as f64 / prev_c.pop as f64;
                 obs.languages.iter().for_each(|(group, agg)| {
-                    if (prev_c.languages.get(group).is_some()) {
+                    if (prev_c.languages.contains_key(group)) {
                         let prev = prev_c.languages.get(group).unwrap();
 
-                        // changes
-                        //     .entry(format!("{}_ldi", group))
-                        //     .and_modify(|x| x.push((prev.speakers - agg.speakers, d_ldi)))
-                        //     .or_insert(vec![((prev.speakers - agg.speakers, d_ldi))]);
+                        changes
+                            .entry(format!("{}_ldi", group))
+                            .and_modify(|x| x.push((prev.speakers - agg.speakers, d_ldi)))
+                            .or_insert(vec![(prev.speakers - agg.speakers, d_ldi)]);
 
                         changes
                             .entry(format!("{}_pop", group))
@@ -392,18 +360,16 @@ fn correlation() {
             }
         });
 
-        fs::write(format!("data/{}/changes.json", metro), serde_json::);
-
         changes.iter().for_each(|(comp, c)| {
             let mut di: Vec<isize> = Vec::new();
             let mut comp_0: Vec<_> = c.iter().enumerate().collect();
-            comp_0.sort_by(|a, b| a.1.0.total_cmp(&b.1.0));
+            comp_0.sort_by(|a, b| a.1 .0.total_cmp(&b.1 .0));
             let mut comp_1: Vec<_> = comp_0.iter().enumerate().collect();
-            comp_1.sort_by(|a, b| a.1.1.1.total_cmp(&b.1.1.1));
+            comp_1.sort_by(|a, b| a.1 .1 .1.total_cmp(&b.1 .1 .1));
 
             comp_1
                 .iter()
-                .for_each(|a| di.push(a.1.0 as isize - a.0 as isize));
+                .for_each(|a| di.push(a.1 .0 as isize - a.0 as isize));
 
             println!(
                 "{} - {} rho: {}",
