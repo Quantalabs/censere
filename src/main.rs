@@ -355,21 +355,39 @@ fn correlation() {
                             .entry(format!("{}_pop", group))
                             .and_modify(|x| x.push((prev.speakers - agg.speakers, d_pop)))
                             .or_insert(vec![(prev.speakers - agg.speakers, d_pop)]);
+
+                        changes
+                            .entry("overall_pop".to_string())
+                            .and_modify(|x| x.push((prev.speakers - agg.speakers, d_pop)))
+                            .or_insert(vec![(prev.speakers - agg.speakers, d_pop)]);
+
+                        changes
+                            .entry("overall_ldi".to_string())
+                            .and_modify(|x| x.push((prev.speakers - agg.speakers, d_ldi)))
+                            .or_insert(vec![(prev.speakers - agg.speakers, d_ldi)]);
                     }
                 });
             }
         });
 
         changes.iter().for_each(|(comp, c)| {
+            let mut wtr = csv::Writer::from_path(format!("data/{}/{}.csv", metro.0, comp)).unwrap();
+
+            c.iter().for_each(|rec| {
+                wtr.write_record(vec![rec.0.to_string(), rec.1.to_string()]);
+            });
+
+            wtr.flush().unwrap();
+
             let mut di: Vec<isize> = Vec::new();
             let mut comp_0: Vec<_> = c.iter().enumerate().collect();
-            comp_0.sort_by(|a, b| a.1 .0.total_cmp(&b.1 .0));
+            comp_0.sort_by(|a, b| a.1.0.total_cmp(&b.1.0));
             let mut comp_1: Vec<_> = comp_0.iter().enumerate().collect();
-            comp_1.sort_by(|a, b| a.1 .1 .1.total_cmp(&b.1 .1 .1));
+            comp_1.sort_by(|a, b| a.1.1.1.total_cmp(&b.1.1.1));
 
             comp_1
                 .iter()
-                .for_each(|a| di.push(a.1 .0 as isize - a.0 as isize));
+                .for_each(|a| di.push(a.1.0 as isize - a.0 as isize));
 
             println!(
                 "{} - {} rho: {}",
