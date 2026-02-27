@@ -381,16 +381,65 @@ fn correlation() {
 
             let mut di: Vec<isize> = Vec::new();
             let mut comp_0: Vec<_> = c.iter().enumerate().collect();
-            comp_0.sort_by(|a, b| a.1.0.total_cmp(&b.1.0));
+            comp_0.sort_by(|a, b| a.1 .0.total_cmp(&b.1 .0));
             let mut comp_1: Vec<_> = comp_0.iter().enumerate().collect();
-            comp_1.sort_by(|a, b| a.1.1.1.total_cmp(&b.1.1.1));
+            comp_1.sort_by(|a, b| a.1 .1 .1.total_cmp(&b.1 .1 .1));
 
             comp_1
                 .iter()
-                .for_each(|a| di.push(a.1.0 as isize - a.0 as isize));
+                .for_each(|a| di.push(a.1 .0 as isize - a.0 as isize));
 
             println!(
                 "{} - {} rho: {}",
+                metro.0,
+                comp,
+                1.0 - (6.0 * di.iter().fold(0.0, |acc, x| acc + (*x as f64).powf(2.0)))
+                    / (di.len() as f64 * ((di.len() as f64).powf(2.0) - 1.0))
+            );
+        });
+
+        let mut gen_changes: HashMap<String, Vec<(f64, f64)>> = HashMap::new();
+
+        gen_obs.iter().for_each(|(g, obs)| {
+            let (year, _) = g.split_at(4);
+            let prev_group = (year.parse::<usize>().unwrap() - 1).to_string();
+            if (gen_obs.contains_key(&prev_group)) {
+                let prev_c = gen_obs.get(&prev_group).unwrap();
+                obs.iter().for_each(|(group, agg)| {
+                    if (prev_c.contains_key(group)) {
+                        let prev = prev_c.get(group).unwrap();
+                        let change = (agg.speakers - prev.speakers, (agg.pop - prev.pop) as f64);
+
+                        gen_changes
+                            .entry(group.clone())
+                            .and_modify(|x| x.push(change))
+                            .or_insert(vec![change]);
+                    }
+                });
+            }
+        });
+
+        gen_changes.iter().for_each(|(comp, c)| {
+            let mut wtr = csv::Writer::from_path(format!("data/{}/{}.csv", metro.0, comp)).unwrap();
+
+            c.iter().for_each(|rec| {
+                wtr.write_record(vec![rec.0.to_string(), rec.1.to_string()]);
+            });
+
+            wtr.flush().unwrap();
+
+            let mut di: Vec<isize> = Vec::new();
+            let mut comp_0: Vec<_> = c.iter().enumerate().collect();
+            comp_0.sort_by(|a, b| a.1 .0.total_cmp(&b.1 .0));
+            let mut comp_1: Vec<_> = comp_0.iter().enumerate().collect();
+            comp_1.sort_by(|a, b| a.1 .1 .1.total_cmp(&b.1 .1 .1));
+
+            comp_1
+                .iter()
+                .for_each(|a| di.push(a.1 .0 as isize - a.0 as isize));
+
+            println!(
+                "{} - Gen {} rho: {}",
                 metro.0,
                 comp,
                 1.0 - (6.0 * di.iter().fold(0.0, |acc, x| acc + (*x as f64).powf(2.0)))
