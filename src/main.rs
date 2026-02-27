@@ -1,4 +1,5 @@
-use std::{collections::HashMap, f64, fs};
+#![allow(unused)]
+use std::{collections::HashMap, f64, fs, ops::Index};
 
 mod read;
 mod utils;
@@ -12,18 +13,128 @@ macro_rules! vec_string {
 static NUM_RECORDS: usize = 14945546;
 static START_RECORD: usize = 0;
 
-static TARGETS: [(&str, &usize); 11] = [
-    ("sf", &(1124976_usize)),
-    ("tristate", &(3243705_usize)),
-    ("la", &(2311223_usize)),
-    ("chicago", &(1436111_usize)),
-    ("dallas", &(1185016_usize)),
-    ("dc", &(1047708_usize)),
-    ("miami", &(981667_usize)),
-    ("houston", &(935185_usize)),
-    ("phil", &(926526_usize)),
-    ("atlanta", &(900600_usize)),
-    ("boston", &(852749_usize)),
+static TARGETS: [(&str, &usize, [&str; 5]); 1] = [
+    (
+        "sf",
+        &(1124975_usize),
+        [
+            "spanish",
+            "cantonese_mandarin",
+            "tagalog_filipino",
+            "indic_dravidian",
+            "vietnamese",
+        ],
+    ),
+    // (
+    //     "tristate",
+    //     &(3243704_usize),
+    //     [
+    //         "spanish",
+    //         "cantonese_mandarin",
+    //         "indic_dravidian",
+    //         "russian",
+    //         "italian",
+    //     ],
+    // ),
+    // (
+    //     "la",
+    //     &(2311222_usize),
+    //     [
+    //         "spanish",
+    //         "cantonese_mandarin",
+    //         "tagalog_filipino",
+    //         "vietnamese",
+    //         "korean",
+    //     ],
+    // ),
+    // (
+    //     "chicago",
+    //     &(1436110_usize),
+    //     [
+    //         "spanish",
+    //         "polish",
+    //         "indic_dravidian",
+    //         "cantonese_mandarin",
+    //         "tagalog_filipino",
+    //     ],
+    // ),
+    // (
+    //     "dallas",
+    //     &(1185015_usize),
+    //     [
+    //         "spanish",
+    //         "indic_dravidian",
+    //         "vietnamese",
+    //         "cantonese_mandarin",
+    //         "korean",
+    //     ],
+    // ),
+    // (
+    //     "dc",
+    //     &(1047707_usize),
+    //     [
+    //         "spanish",
+    //         "indic_dravidian",
+    //         "cantonese_mandarin",
+    //         "korean",
+    //         "vietnamese",
+    //     ],
+    // ),
+    // (
+    //     "miami",
+    //     &(981666_usize),
+    //     [
+    //         "spanish",
+    //         "portuguese",
+    //         "indic_dravidian",
+    //         "cantonese_mandarin",
+    //         "italian",
+    //     ],
+    // ),
+    // (
+    //     "houston",
+    //     &(935184_usize),
+    //     [
+    //         "spanish",
+    //         "vietnamese",
+    //         "indic_dravidian",
+    //         "cantonese_mandarin",
+    //         "tagalog_filipino",
+    //     ],
+    // ),
+    // (
+    //     "phil",
+    //     &(926525_usize),
+    //     [
+    //         "spanish",
+    //         "indic_dravidian",
+    //         "cantonese_mandarin",
+    //         "italian",
+    //         "russian",
+    //     ],
+    // ),
+    // (
+    //     "atlanta",
+    //     &(900599_usize),
+    //     [
+    //         "spanish",
+    //         "indic_dravidian",
+    //         "cantonese_mandarin",
+    //         "vietnamese",
+    //         "korean",
+    //     ],
+    // ),
+    // (
+    //     "boston",
+    //     &(852748_usize),
+    //     [
+    //         "spanish",
+    //         "cantonese_mandarin",
+    //         "portuguese",
+    //         "indic_dravidian",
+    //         "italian",
+    //     ],
+    // ),
 ];
 
 fn split() {
@@ -72,92 +183,240 @@ fn split() {
     }
 }
 
-fn filter_languages() {
-    let filters: Vec<read::FilterLang> = vec![
-        read::FilterLang(
+fn find_large() {
+    TARGETS.iter().for_each(|metro| {
+        let recs = read::read(
+            format!("./data/raw/{}.csv", metro.0),
+            (0..12).collect(),
+            metro.1,
+            &0,
+        )
+        .unwrap()
+        .0;
+
+        let mut langs: HashMap<String, usize> = HashMap::new();
+
+        recs.iter().for_each(|x| {
+            langs
+                .entry(x[10].clone())
+                .and_modify(|x| *x += 1)
+                .or_insert(1);
+        });
+
+        langs.remove("0");
+        langs.remove("1");
+
+        let mut top_lang = langs.into_iter().collect::<Vec<(String, usize)>>();
+        top_lang.sort_by(|a, b| (a.1).cmp(&b.1).reverse());
+
+        println!("{} Langs: {:#?}", metro.0, &top_lang[0..10]);
+    });
+}
+
+fn filter_puma() {
+    let filters: HashMap<String, read::Codes> = vec![
+        (
             String::from("cantonese_mandarin"),
             read::Codes {
                 languages: vec_string!["43"],
                 ancestry: vec_string!["706", "707", "708", "709", "716", "782"],
             },
         ),
-        read::FilterLang(
+        (
             String::from("spanish"),
             read::Codes {
                 languages: vec_string!["12"],
                 ancestry: (200..338).map(|x| x.to_string()).collect(),
             },
         ),
-        read::FilterLang(
+        (
             String::from("tagalog_filipino"),
             read::Codes {
                 languages: vec_string!["54"],
                 ancestry: vec_string!["720"],
             },
         ),
-        read::FilterLang(
+        (
             String::from("vietnamese"),
             read::Codes {
                 languages: vec_string!["50"],
                 ancestry: (785..791).map(|x| x.to_string()).collect(),
             },
         ),
-        read::FilterLang(
+        (
             String::from("indic_dravidian"),
             read::Codes {
                 languages: vec_string!["31", "40"],
                 ancestry: (603..696).map(|x| x.to_string()).collect(),
             },
         ),
-    ];
-
-    for metro in TARGETS {
-        read::filter_metro(String::from(metro.0), &filters, metro.1, &0);
-    }
-}
-
-fn filter_puma() {
-    let languages = [
-        "cantonese_mandarin",
-        "spanish",
-        "tagalog_filipino",
-        "vietnamese",
-        "indic_dravidian",
-    ];
+        (
+            String::from("russian"),
+            read::Codes {
+                languages: vec_string!["18"],
+                ancestry: vec_string!["148"],
+            },
+        ),
+        (
+            String::from("italian"),
+            read::Codes {
+                languages: vec_string!["10"],
+                ancestry: (51..73).map(|x| x.to_string()).collect(),
+            },
+        ),
+        (
+            String::from("korean"),
+            read::Codes {
+                languages: vec_string!["49"],
+                ancestry: vec_string!["750"],
+            },
+        ),
+        (
+            String::from("polish"),
+            read::Codes {
+                languages: vec_string!["21"],
+                ancestry: vec_string!["142"],
+            },
+        ),
+        (
+            String::from("portuguese"),
+            read::Codes {
+                languages: vec_string!["13"],
+                ancestry: vec_string!["84", "85", "86", "360"],
+            },
+        ),
+    ]
+    .into_iter()
+    .collect();
 
     TARGETS.iter().for_each(|metro| {
-        languages.iter().for_each(|lang| {
-            utils::filter_puma(metro.0, lang);
+        utils::filter_puma(metro.0, metro.1, {
+            let mut ret: HashMap<String, &read::Codes> = HashMap::new();
+            metro.2.iter().for_each(|x| {
+                ret.entry(x.to_string())
+                    .insert_entry(filters.get(&x.to_string()).unwrap());
+            });
+            ret
         });
     });
 }
 
-struct ObservationLoc {
-    year: usize,
-    pop: usize,
-    speakers: usize,
-    migration: f64,
-    ldi: f64,
-    shift: f64,
-}
-
-struct ObservationGen {
-    year: usize,
-    pop: usize,
-    speakers: usize,
-    migration: f64,
-    ldi: f64,
-    hor_shift: f64,
-    vert_shift: f64,
-}
-
 fn correlation() {
-    let mut gen_obs: Vec<ObservationGen> = Vec::new();
-    let mut gen_loc: Vec<ObservationLoc> = Vec::new();
+    TARGETS.iter().for_each(|metro| {
+        let mut gen_obs: HashMap<String, HashMap<String, utils::Agg>> = HashMap::new();
+        let mut loc_obs: HashMap<String, utils::PumaAgg> = HashMap::new();
+        let mut loc_mig: HashMap<String, HashMap<usize, usize>> = HashMap::new();
+
+        let paths = fs::read_dir(format!("data/{}/", metro.0)).unwrap();
+
+        paths.for_each(|puma| {
+            let m = puma.unwrap();
+            if (!m.file_type().unwrap().is_file()) {
+                 
+                let d = fs::read_dir(m.path()).unwrap();
+
+                d.for_each(|group| {
+                    let g = group.unwrap();
+                    let year = g.path()
+                                    .file_name()
+                                    .unwrap()
+                                    .to_str()
+                                    .unwrap()
+                                    .split_at(4)
+                                    .0
+                                    .to_string();
+                    if g.path()
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .ends_with("gen_agg.json")
+                    {
+                        gen_obs
+                            .entry(
+                                year
+                            )
+                            .insert_entry(
+                                serde_json::from_str(
+                                    fs::read_to_string(g.path()).unwrap().as_str(),
+                                )
+                                .unwrap(),
+                            );
+                    } else if g
+                        .path()
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .ends_with("_agg.json")
+                    {
+                        loc_obs
+                            .entry(
+                                year
+                            )
+                            .insert_entry(
+                                serde_json::from_str(
+                                    fs::read_to_string(g.path()).unwrap().as_str(),
+                                )
+                                .unwrap(),
+                            );
+                    }
+                })
+            }
+        });
+
+        let mut changes: HashMap<String, Vec<(f64, f64)>> = HashMap::new();
+
+        loc_obs.iter().for_each(|(g, obs)| {
+            let (year, _) = g.split_at(4);
+            let prev_group = (year.parse::<usize>().unwrap() - 1).to_string();
+            if (loc_obs.get(&prev_group).is_some()) {
+                let prev_c = loc_obs.get(&prev_group).unwrap();
+                let d_ldi = prev_c.ldi - obs.ldi;
+                let d_pop = prev_c.pop as f64 - obs.pop as f64 / prev_c.pop as f64;
+                obs.languages.iter().for_each(|(group, agg)| {
+                    if (prev_c.languages.get(group).is_some()) {
+                        let prev = prev_c.languages.get(group).unwrap();
+
+                        // changes
+                        //     .entry(format!("{}_ldi", group))
+                        //     .and_modify(|x| x.push((prev.speakers - agg.speakers, d_ldi)))
+                        //     .or_insert(vec![((prev.speakers - agg.speakers, d_ldi))]);
+
+                        changes
+                            .entry(format!("{}_pop", group))
+                            .and_modify(|x| x.push((prev.speakers - agg.speakers, d_pop)))
+                            .or_insert(vec![(prev.speakers - agg.speakers, d_pop)]);
+                    }
+                });
+            }
+        });
+
+        fs::write(format!("data/{}/changes.json", metro), serde_json::);
+
+        changes.iter().for_each(|(comp, c)| {
+            let mut di: Vec<isize> = Vec::new();
+            let mut comp_0: Vec<_> = c.iter().enumerate().collect();
+            comp_0.sort_by(|a, b| a.1.0.total_cmp(&b.1.0));
+            let mut comp_1: Vec<_> = comp_0.iter().enumerate().collect();
+            comp_1.sort_by(|a, b| a.1.1.1.total_cmp(&b.1.1.1));
+
+            comp_1
+                .iter()
+                .for_each(|a| di.push(a.1.0 as isize - a.0 as isize));
+
+            println!(
+                "{} - {} rho: {}",
+                metro.0,
+                comp,
+                1.0 - (6.0 * di.iter().fold(0.0, |acc, x| acc + (*x as f64).powf(2.0)))
+                    / (di.len() as f64 * ((di.len() as f64).powf(2.0) - 1.0))
+            );
+        });
+    });
 }
 
 fn main() {
     let stages = [correlation];
-
     stages.iter().for_each(|x| x());
 }

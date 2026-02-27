@@ -45,6 +45,7 @@
               cargo
               clippy
               rust-analyzer
+              rustfmt
             ] ++ buildInputs ++ nativeBuildInputs;
 
             shellHook = ''

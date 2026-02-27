@@ -4,12 +4,14 @@ use serde_json::json;
 use std::ops::{Add, AddAssign};
 use std::{collections::HashMap, fs};
 
-#[derive(Serialize, Deserialize, Clone)]
-struct Agg {
-    pop: usize,
-    nonspeakers: f64,
-    speakers: f64,
-    migration: f64,
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Agg {
+    pub pop: usize,
+    pub nonspeakers: f64,
+    pub speakers: f64,
+    pub migration: HashMap<usize, usize>,
+    pub langs: Vec<String>,
+    pub ancestries: Vec<String>,
 }
 
 impl Add<Agg> for Agg {
@@ -17,6 +19,20 @@ impl Add<Agg> for Agg {
 
     fn add(self, other: Self) -> Self {
         let pop = self.pop + other.pop;
+        let mut langs = self.langs;
+        let mut ancestries = self.ancestries;
+
+        other.langs.iter().for_each(|x| {
+            if !langs.contains(x) {
+                langs.push(x.clone());
+            }
+        });
+        other.ancestries.iter().for_each(|x| {
+            if !ancestries.contains(x) {
+                ancestries.push(x.clone());
+            }
+        });
+
         Self {
             pop,
             nonspeakers: ((self.nonspeakers * (self.pop as f64))
@@ -24,33 +40,50 @@ impl Add<Agg> for Agg {
                 / (pop as f64),
             speakers: ((self.speakers * (self.pop as f64)) + (other.speakers * (other.pop as f64)))
                 / (pop as f64),
-            migration: ((self.migration * (self.pop as f64))
-                + (other.migration * (other.pop as f64)))
-                / (pop as f64),
+            migration: self
+                .migration
+                .iter()
+                .map(|(k, v)| (k.clone(), v + other.migration.get(k).unwrap_or_else(|| &0)))
+                .collect(),
+            langs,
+            ancestries,
         }
     }
 }
 
-impl Add<(Language, Vec<String>)> for Agg {
+impl Add<Vec<String>> for Agg {
     type Output = Self;
 
-    fn add(self, other: (Language, Vec<String>)) -> Self {
+    fn add(self, other: Vec<String>) -> Self {
         let pop = self.pop + 1;
         let nonspeakers = (self.nonspeakers * (self.pop as f64)
-            + if other.1[10] != other.0 { 1.0 } else { 0.0 })
+            + if self.langs.contains(&other[10]) {
+                1.0
+            } else {
+                0.0
+            })
             / (pop as f64);
         let speakers = (self.speakers * (self.pop as f64)
-            + if other.1[10] != other.0 { 0.0 } else { 1.0 })
+            + if self.langs.contains(&other[10]) {
+                0.0
+            } else {
+                1.0
+            })
             / (pop as f64);
-        let migration = (self.migration * (self.pop as f64)
-            + if other.1[0] != other.1[9] { 0.0 } else { 1.0 })
-            / (pop as f64);
+        let mut migration = self.migration.clone();
+
+        migration
+            .entry(str::parse(other[9].as_str()).unwrap())
+            .and_modify(|e| *e += 1)
+            .or_insert(1);
 
         Self {
             pop,
             nonspeakers,
             speakers,
             migration,
+            langs: self.langs,
+            ancestries: self.ancestries,
         }
     }
 }
@@ -63,6 +96,8 @@ impl AddAssign for Agg {
         self.speakers = new.speakers;
         self.nonspeakers = new.nonspeakers;
         self.migration = new.migration;
+        self.langs = new.langs;
+        self.ancestries = new.ancestries;
     }
 }
 
@@ -75,11 +110,10 @@ type Language = String;
 type Record = Vec<String>;
 
 #[derive(Serialize, Deserialize)]
-struct PumaAgg {
-    pop: usize,
-    ldi: f64,
-    l1: f64,
-    languages: HashMap<Language, Agg>,
+pub struct PumaAgg {
+    pub pop: usize,
+    pub ldi: f64,
+    pub languages: HashMap<Language, Agg>,
 }
 
 fn find_gen(age: usize, year: usize) -> usize {
@@ -88,7 +122,7 @@ fn find_gen(age: usize, year: usize) -> usize {
     current / 20
 }
 
-pub fn filter_puma<T: Fn(Record) -> String>(metro: &str, num: &'static usize, classifier: T) {
+pub fn filter_puma(metro: &str, num: &'static usize, filters: HashMap<String, &read::Codes>) {
     let records = read::read(
         format!("./data/raw/{}.csv", metro),
         (0..12).collect(),
@@ -113,78 +147,133 @@ pub fn filter_puma<T: Fn(Record) -> String>(metro: &str, num: &'static usize, cl
                 str::parse(&x[0]).unwrap(),
             ))
             .or_default()
-            .entry(classifier(x.clone()))
+            .entry({
+                let mut ret = String::from("other");
+
+                filters.iter().for_each(|filter| {
+                    if filter.1.ancestry.contains(&x[5]) || filter.1.ancestry.contains(&x[7]) {
+                        ret = filter.0.clone();
+                    } else if filter.1.languages.contains(&x[10]) {
+                        ret = filter.0.clone();
+                    }
+                });
+
+                ret
+            })
             .or_default()
             .push(x);
     });
 
+    let _ = fs::create_dir(format!("data/{}", metro));
+
+    let mut metro_agg: HashMap<Language, Agg> = HashMap::new();
+    let mut metro_gen_agg: HashMap<String, Agg> = HashMap::new();
+
     data.iter().for_each(|(puma, years)| {
+        let _ = fs::create_dir(format!("data/{}/{}", metro, puma));
         years.iter().for_each(|(year, gens)| {
-            let mut lang_aggs: HashMap<Language, Agg> = HashMap::new();
+            let mut loc_aggs: HashMap<Language, Agg> = HashMap::new();
+            let mut gen_aggs: HashMap<String, Agg> = HashMap::new();
+            let mut other_loc: HashMap<Language, usize> = HashMap::new();
             let mut pop = 0;
 
             gens.iter().for_each(|(generation, langs)| {
                 langs.iter().for_each(|(lang, records)| {
-                    let agg;
                     if lang != "other" {
-                        agg = records.iter().fold(
+                        let agg = records.iter().fold(
                             Agg {
                                 pop: 0,
                                 nonspeakers: 0.0,
                                 speakers: 0.0,
-                                migration: 0.0,
+                                migration: HashMap::new(),
+                                langs: filters.get(lang).unwrap().languages.clone(),
+                                ancestries: filters.get(lang).unwrap().ancestry.clone(),
                             },
-                            |acc: Agg, &x| acc + (lang.clone(), x.clone()),
+                            |acc: Agg, &x| {
+                                pop += 1;
+
+                                if x[10] != *lang {
+                                    other_loc
+                                        .entry(x[10].clone())
+                                        .and_modify(|x| *x += 1)
+                                        .or_insert(1);
+                                }
+                                acc + x.clone()
+                            },
                         );
+
+                        loc_aggs
+                            .entry(lang.clone())
+                            .and_modify(|x| *x += agg.clone())
+                            .or_insert(agg.clone());
+
+                        gen_aggs
+                            .entry(format!("{}_{}", generation, lang))
+                            .and_modify(|x| *x += agg.clone())
+                            .or_insert(agg.clone());
+
+                        metro_agg
+                            .entry(format!("{}_{}", year, lang))
+                            .and_modify(|x| *x += agg.clone())
+                            .or_insert(agg.clone());
+
+                        metro_gen_agg
+                            .entry(format!("{}_{}_{}", year, generation, lang))
+                            .and_modify(|x| *x += agg.clone())
+                            .or_insert(agg.clone());
+
+                        let _ = fs::write(
+                            format!(
+                                "data/{}/{}/{}_{}_{}.json",
+                                metro, puma, year, generation, lang
+                            ),
+                            serde_json::to_string(&agg).unwrap(),
+                        )
+                        .unwrap();
                     } else {
-                        agg = records.iter().fold(
-                            Agg {
-                                pop: 0,
-                                nonspeakers: 0.0,
-                                speakers: 0.0,
-                                migration: 0.0,
-                            },
-                            |acc: Agg, &x| acc + (lang.clone(), x.clone()),
-                        );
+                        other_loc
+                            .entry(lang.clone())
+                            .and_modify(|x| *x += 1)
+                            .or_insert(1);
                     }
-
-                    lang_aggs
-                        .entry(lang.clone())
-                        .and_modify(|x| *x += agg.clone())
-                        .or_insert(agg.clone());
-
-                    pop += 1;
-
-                    fs::write(
-                        format!(
-                            "data/{}/{}/{}/{}/{}.json",
-                            metro, puma, year, generation, lang
-                        ),
-                        serde_json::to_string(&agg).unwrap(),
-                    );
                 });
             });
 
-            let ldi = 1.0
-                - lang_aggs.iter().fold(0.0, |acc, (_, x)| {
-                    acc + (x.speakers * (x.pop as f64) / (pop as f64)).powf(2.0)
+            let ldi =
+                1.0 - loc_aggs.iter().fold(0.0, |acc, (_, x)| {
+                    acc + ((x.speakers * (x.pop as f64)) / (pop as f64)).powf(2.0)
+                }) - other_loc.iter().fold(0.0, |acc, (_, x)| {
+                    acc + ((*x as f64) / (pop as f64)).powf(2.0)
                 });
 
-            let l1 = lang_aggs
-                .iter()
-                .fold(0.0, |acc, (_, x)| acc + (x.speakers * (x.pop as f64)))
-                / (pop as f64);
+            let _ = fs::write(
+                format!("data/{}/{}/{}_gen_agg.json", metro, puma, year),
+                serde_json::to_string(&gen_aggs).unwrap(),
+            )
+            .unwrap();
 
-            fs::write(
-                format!("data/{}/{}/{}/agg.json", metro, puma, year),
+            let _ = fs::write(
+                format!("data/{}/{}/{}_agg.json", metro, puma, year),
                 serde_json::to_string(&PumaAgg {
                     pop,
                     ldi,
-                    l1,
-                    languages: lang_aggs,
+                    languages: loc_aggs,
                 })
                 .unwrap(),
-            );
-        })
+            )
+            .unwrap();
+        });
     });
+
+    let _ = fs::write(
+        format!("data/{}/agg.json", metro),
+        serde_json::to_string(&metro_agg).unwrap(),
+    )
+    .unwrap();
+
+    let _ = fs::write(
+        format!("data/{}/gen_agg.json", metro),
+        serde_json::to_string(&metro_gen_agg).unwrap(),
+    )
+    .unwrap();
 }
