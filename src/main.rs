@@ -340,38 +340,43 @@ fn correlation() {
             let prev_group = (year.parse::<usize>().unwrap() - 1).to_string();
             if (loc_obs.contains_key(&prev_group)) {
                 let prev_c = loc_obs.get(&prev_group).unwrap();
-                let d_ldi = prev_c.ldi - obs.ldi;
-                let d_pop = prev_c.pop as f64 - obs.pop as f64 / prev_c.pop as f64;
+                let d_ldi = obs.ldi - prev_c.ldi;
+                let d_pop = obs.pop as f64 - prev_c.pop as f64;
                 obs.languages.iter().for_each(|(group, agg)| {
                     if (prev_c.languages.contains_key(group)) {
                         let prev = prev_c.languages.get(group).unwrap();
+                        let ldi_change = (agg.speakers - prev.speakers, d_ldi);
+                        let pop_change = (agg.speakers - prev.speakers, d_pop);
 
                         changes
                             .entry(format!("{}_ldi", group))
-                            .and_modify(|x| x.push((prev.speakers - agg.speakers, d_ldi)))
-                            .or_insert(vec![(prev.speakers - agg.speakers, d_ldi)]);
+                            .and_modify(|x| x.push(ldi_change))
+                            .or_insert(vec![ldi_change]);
 
                         changes
                             .entry(format!("{}_pop", group))
-                            .and_modify(|x| x.push((prev.speakers - agg.speakers, d_pop)))
-                            .or_insert(vec![(prev.speakers - agg.speakers, d_pop)]);
+                            .and_modify(|x| x.push(pop_change))
+                            .or_insert(vec![pop_change]);
 
                         changes
                             .entry("overall_pop".to_string())
-                            .and_modify(|x| x.push((prev.speakers - agg.speakers, d_pop)))
-                            .or_insert(vec![(prev.speakers - agg.speakers, d_pop)]);
+                            .and_modify(|x| x.push(pop_change))
+                            .or_insert(vec![pop_change]);
 
                         changes
                             .entry("overall_ldi".to_string())
-                            .and_modify(|x| x.push((prev.speakers - agg.speakers, d_ldi)))
-                            .or_insert(vec![(prev.speakers - agg.speakers, d_ldi)]);
+                            .and_modify(|x| x.push(ldi_change))
+                            .or_insert(vec![ldi_change]);
                     }
                 });
             }
         });
 
+        fs::create_dir(format!("data/{}/pairs", metro.0));
+
         changes.iter().for_each(|(comp, c)| {
-            let mut wtr = csv::Writer::from_path(format!("data/{}/{}.csv", metro.0, comp)).unwrap();
+            let mut wtr =
+                csv::Writer::from_path(format!("data/{}/pairs/{}.csv", metro.0, comp)).unwrap();
 
             c.iter().for_each(|rec| {
                 wtr.write_record(vec![rec.0.to_string(), rec.1.to_string()]);
@@ -381,13 +386,13 @@ fn correlation() {
 
             let mut di: Vec<isize> = Vec::new();
             let mut comp_0: Vec<_> = c.iter().enumerate().collect();
-            comp_0.sort_by(|a, b| a.1 .0.total_cmp(&b.1 .0));
+            comp_0.sort_by(|a, b| a.1.0.total_cmp(&b.1.0));
             let mut comp_1: Vec<_> = comp_0.iter().enumerate().collect();
-            comp_1.sort_by(|a, b| a.1 .1 .1.total_cmp(&b.1 .1 .1));
+            comp_1.sort_by(|a, b| a.1.1.1.total_cmp(&b.1.1.1));
 
             comp_1
                 .iter()
-                .for_each(|a| di.push(a.1 .0 as isize - a.0 as isize));
+                .for_each(|a| di.push(a.1.0 as isize - a.0 as isize));
 
             println!(
                 "{} - {} rho: {}",
@@ -408,10 +413,23 @@ fn correlation() {
                 obs.iter().for_each(|(group, agg)| {
                     if (prev_c.contains_key(group)) {
                         let prev = prev_c.get(group).unwrap();
-                        let change = (agg.speakers - prev.speakers, (agg.pop - prev.pop) as f64);
+                        let change = (
+                            agg.speakers - prev.speakers,
+                            agg.pop as f64 - prev.pop as f64,
+                        );
 
                         gen_changes
-                            .entry(group.clone())
+                            .entry(group.split_at(1).0.to_string())
+                            .and_modify(|x| x.push(change))
+                            .or_insert(vec![change]);
+
+                        gen_changes
+                            .entry(group.split_at(2).1.to_string())
+                            .and_modify(|x| x.push(change))
+                            .or_insert(vec![change]);
+
+                        gen_changes
+                            .entry("overall".to_string())
                             .and_modify(|x| x.push(change))
                             .or_insert(vec![change]);
                     }
@@ -420,7 +438,8 @@ fn correlation() {
         });
 
         gen_changes.iter().for_each(|(comp, c)| {
-            let mut wtr = csv::Writer::from_path(format!("data/{}/{}.csv", metro.0, comp)).unwrap();
+            let mut wtr =
+                csv::Writer::from_path(format!("data/{}/pairs/gen{}.csv", metro.0, comp)).unwrap();
 
             c.iter().for_each(|rec| {
                 wtr.write_record(vec![rec.0.to_string(), rec.1.to_string()]);
@@ -430,13 +449,13 @@ fn correlation() {
 
             let mut di: Vec<isize> = Vec::new();
             let mut comp_0: Vec<_> = c.iter().enumerate().collect();
-            comp_0.sort_by(|a, b| a.1 .0.total_cmp(&b.1 .0));
+            comp_0.sort_by(|a, b| a.1.0.total_cmp(&b.1.0));
             let mut comp_1: Vec<_> = comp_0.iter().enumerate().collect();
-            comp_1.sort_by(|a, b| a.1 .1 .1.total_cmp(&b.1 .1 .1));
+            comp_1.sort_by(|a, b| a.1.1.1.total_cmp(&b.1.1.1));
 
             comp_1
                 .iter()
-                .for_each(|a| di.push(a.1 .0 as isize - a.0 as isize));
+                .for_each(|a| di.push(a.1.0 as isize - a.0 as isize));
 
             println!(
                 "{} - Gen {} rho: {}",
